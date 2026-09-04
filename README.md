@@ -63,3 +63,4 @@ Work through feature branches and Pull Requests. `.github/workflows/ci.yml` vali
 Design of Systems teams own frontend/backend product evolution. Software Development teams act as DevOps/Platform teams: Codespaces, CI/CD, containerization, integration readiness, observability and later DevSecOps security gates.
 
 See `docs/` for C4, data ownership, missions and incident runbooks.
+
