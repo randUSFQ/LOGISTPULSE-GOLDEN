@@ -1,88 +1,48 @@
-#!/usr/bin/env bash
-set -euo pipefail
+def bootstrap():
+    last_error = None
 
-BASE_URL="${1:-http://localhost:8080}"
+    for attempt in range(40):
+        try:
+            print(f"[BOOTSTRAP] Inventory DB attempt {attempt + 1}/40")
 
-echo "=========================================="
-echo " LOGISTPULSE - Infrastructure Smoke Test"
-echo "=========================================="
-echo
+            with conn() as c:
+                c.execute("""
+                    CREATE TABLE IF NOT EXISTS inventory(
+                        store_id text,
+                        sku text,
+                        item_name text,
+                        unit text,
+                        stock numeric,
+                        forecast_4h numeric,
+                        PRIMARY KEY(store_id, sku)
+                    )
+                """)
 
-echo "[1/6] Console"
+                n = c.execute(
+                    "SELECT count(*) FROM inventory"
+                ).fetchone()[0]
 
-curl -fsS "$BASE_URL/" | grep -q "LOGISTPULSE"
+                if n == 0:
+                    c.executemany(
+                        "INSERT INTO inventory VALUES (%s,%s,%s,%s,%s,%s)",
+                        [
+                            ('STORE-042','CHK','Pollo','kg',38,61),
+                            ('STORE-042','POT','Papas','kg',74,52),
+                            ('STORE-042','OIL','Aceite','L',21,30),
+                            ('STORE-042','PKG','Empaques','u',425,310)
+                        ]
+                    )
 
-echo "OK - Console reachable"
-echo
+                c.commit()
 
+            print("[BOOTSTRAP] Inventory database READY")
+            return
 
-echo "[2/6] Inventory service"
+        except Exception as e:
+            last_error = e
+            print(f"[BOOTSTRAP] attempt {attempt + 1} failed: {e}")
+            time.sleep(1)
 
-curl -fsS \
-  "$BASE_URL/health/inventory" \
-  > /dev/null
-
-echo "OK - Inventory API reachable"
-echo
-
-
-echo "[3/6] Logistics service"
-
-curl -fsS \
-  "$BASE_URL/health/logistics" \
-  > /dev/null
-
-echo "OK - Logistics API reachable"
-echo
-
-
-echo "[4/6] Operations service"
-
-curl -fsS \
-  "$BASE_URL/health/operations" \
-  > /dev/null
-
-echo "OK - Operations API reachable"
-echo
-
-
-echo "[5/6] Fulfillment service"
-
-curl -fsS \
-  "$BASE_URL/health/fulfillment" \
-  > /dev/null
-
-echo "OK - Fulfillment API reachable"
-echo
-
-
-echo "[6/6] Edge routing"
-
-for service in inventory logistics operations fulfillment; do
-
-  HTTP_CODE=$(curl -s \
-    -o /dev/null \
-    -w "%{http_code}" \
-    "$BASE_URL/health/$service")
-
-  if [ "$HTTP_CODE" != "200" ]; then
-    echo "ERROR - $service returned HTTP $HTTP_CODE"
-    exit 1
-  fi
-
-  echo "OK - $service -> HTTP $HTTP_CODE"
-
-done
-
-
-echo
-echo "=========================================="
-echo " LOGISTPULSE INFRASTRUCTURE SMOKE PASSED"
-echo "=========================================="
-echo
-echo "NOTE:"
-echo "This smoke test validates infrastructure,"
-echo "service availability and edge routing."
-echo
-echo "Database/domain integration tests are"
-echo "intentionally excluded from this stage."
+    raise RuntimeError(
+        f"Inventory database bootstrap failed: {last_error}"
+    )
